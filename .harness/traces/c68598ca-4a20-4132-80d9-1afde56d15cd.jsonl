@@ -1,0 +1,2 @@
+{"timestamp":"2026-03-01T21:50:43.973Z","sessionId":"c68598ca-4a20-4132-80d9-1afde56d15cd","seq":1,"event":"session_start","data":{"tool":"gemini","task":"npx_success_test_2","mode":"coding","contextDir":"/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server"}}
+{"timestamp":"2026-03-01T21:50:43.978Z","sessionId":"c68598ca-4a20-4132-80d9-1afde56d15cd","seq":2,"event":"spawn_error","data":{"error":"posix_spawnp failed."}}

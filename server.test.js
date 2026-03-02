@@ -105,24 +105,24 @@ describe('AI CLI Proxy Server', () => {
         });
     });
 
-    describe('POST /api/harness', () => {
-        it('should execute the command for an allowed tool with a task', async () => {
-            execFile.mockImplementationOnce((command, args, options, callback) => {
-                callback(null, 'Harness output', null);
-            });
-
+    describe('POST /api/harness/sessions', () => {
+        it('should create a session for an allowed tool with a task', async () => {
             const res = await request(app)
-                .post('/api/harness')
-                .send({ tool: 'gemini', task: 'refactor code' });
+                .post('/api/harness/sessions')
+                .send({ tool: 'gemini', task: 'refactor code', contextDir: '/tmp' });
 
-            expect(res.statusCode).toEqual(200);
-            expect(res.body).toEqual({ response: 'Harness output' });
-            expect(execFile).toHaveBeenCalledWith('gemini', ['refactor code', '--yolo'], expect.any(Object), expect.any(Function));
+            expect(res.statusCode).toEqual(201);
+            expect(res.body).toHaveProperty('session');
+            expect(res.body.session.tool).toBe('gemini');
+            expect(res.body.session.task).toBe('refactor code');
+            expect(res.body.session.state).toBe('created');
+            expect(res.body.session.mode).toBe('coding');
+            expect(res.body.session.id).toBeDefined();
         });
 
         it('should return 400 if tool is missing', async () => {
             const res = await request(app)
-                .post('/api/harness')
+                .post('/api/harness/sessions')
                 .send({ task: 'refactor code' });
             expect(res.statusCode).toEqual(400);
             expect(res.body).toEqual({ error: 'Tool and task are required' });
@@ -130,7 +130,7 @@ describe('AI CLI Proxy Server', () => {
 
         it('should return 400 if task is missing', async () => {
             const res = await request(app)
-                .post('/api/harness')
+                .post('/api/harness/sessions')
                 .send({ tool: 'gemini' });
             expect(res.statusCode).toEqual(400);
             expect(res.body).toEqual({ error: 'Tool and task are required' });
@@ -138,55 +138,54 @@ describe('AI CLI Proxy Server', () => {
 
         it('should return 400 if tool is not allowed', async () => {
             const res = await request(app)
-                .post('/api/harness')
+                .post('/api/harness/sessions')
                 .send({ tool: 'unsupported', task: 'refactor code' });
             expect(res.statusCode).toEqual(400);
             expect(res.body).toEqual({ error: 'Unsupported CLI tool. Allowed tools: gemini, opencode, codex, cursor' });
         });
 
-        it('should execute the command with contextDir', async () => {
-            execFile.mockImplementationOnce((command, args, options, callback) => {
-                expect(options.cwd).toEqual('/test/dir');
-                callback(null, 'Harness output with contextDir', null);
-            });
-
+        it('should accept optional mode and timeBudgetMs', async () => {
             const res = await request(app)
-                .post('/api/harness')
-                .send({ tool: 'gemini', task: 'refactor code', contextDir: '/test/dir' });
+                .post('/api/harness/sessions')
+                .send({ tool: 'gemini', task: 'build app', contextDir: '/tmp', mode: 'initializer', timeBudgetMs: 120000 });
 
+            expect(res.statusCode).toEqual(201);
+            expect(res.body.session.mode).toBe('initializer');
+            expect(res.body.session.timeBudgetMs).toBe(120000);
+        });
+    });
+
+    describe('GET /api/harness/sessions', () => {
+        it('should list all sessions', async () => {
+            // Create a session first
+            await request(app)
+                .post('/api/harness/sessions')
+                .send({ tool: 'gemini', task: 'test task', contextDir: '/tmp' });
+
+            const res = await request(app).get('/api/harness/sessions');
             expect(res.statusCode).toEqual(200);
-            expect(res.body).toEqual({ response: 'Harness output with contextDir' });
-            expect(execFile).toHaveBeenCalledWith('gemini', ['refactor code', '--yolo'], expect.any(Object), expect.any(Function));
+            expect(res.body).toHaveProperty('sessions');
+            expect(Array.isArray(res.body.sessions)).toBe(true);
+        });
+    });
+
+    describe('GET /api/harness/sessions/:id', () => {
+        it('should return 404 for unknown session', async () => {
+            const res = await request(app).get('/api/harness/sessions/nonexistent');
+            expect(res.statusCode).toEqual(404);
+            expect(res.body).toEqual({ error: 'Session not found' });
         });
 
-        it('should handle command execution error for harness', async () => {
-            execFile.mockImplementationOnce((command, args, options, callback) => {
-                callback(new Error('Harness command failed'), null, 'Harness error details on stderr');
-            });
+        it('should return session details', async () => {
+            const createRes = await request(app)
+                .post('/api/harness/sessions')
+                .send({ tool: 'gemini', task: 'test task', contextDir: '/tmp' });
+            const sessionId = createRes.body.session.id;
 
-            const res = await request(app)
-                .post('/api/harness')
-                .send({ tool: 'gemini', task: 'refactor code' });
-
-            expect(res.statusCode).toEqual(500);
-            expect(res.body).toEqual({
-                error: 'Command Execution Failed',
-                details: 'Harness command failed',
-                stderr: 'Harness error details on stderr'
-            });
-        });
-
-        it('should return stderr as response if stdout is empty for harness', async () => {
-            execFile.mockImplementationOnce((command, args, options, callback) => {
-                callback(null, '', 'Harness warning on stderr');
-            });
-
-            const res = await request(app)
-                .post('/api/harness')
-                .send({ tool: 'gemini', task: 'refactor code' });
-
+            const res = await request(app).get(`/api/harness/sessions/${sessionId}`);
             expect(res.statusCode).toEqual(200);
-            expect(res.body).toEqual({ response: 'Harness warning on stderr' });
+            expect(res.body.session.id).toBe(sessionId);
+            expect(res.body.session.tool).toBe('gemini');
         });
     });
 });

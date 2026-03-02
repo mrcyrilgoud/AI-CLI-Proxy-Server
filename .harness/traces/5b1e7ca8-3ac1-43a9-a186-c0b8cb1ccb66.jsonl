@@ -1,0 +1,6 @@
+{"timestamp":"2026-03-01T20:49:27.977Z","sessionId":"5b1e7ca8-3ac1-43a9-a186-c0b8cb1ccb66","seq":1,"event":"session_start","data":{"tool":"gemini","task":"test_stop_fix","mode":"coding","contextDir":"/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server"}}
+{"timestamp":"2026-03-01T20:49:27.985Z","sessionId":"5b1e7ca8-3ac1-43a9-a186-c0b8cb1ccb66","seq":2,"event":"spawn_error","data":{"error":"posix_spawnp failed."}}
+{"timestamp":"2026-03-01T21:09:18.291Z","sessionId":"5b1e7ca8-3ac1-43a9-a186-c0b8cb1ccb66","seq":1,"event":"session_start","data":{"tool":"gemini","task":"test_stop_fix","mode":"coding","contextDir":"/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server"}}
+{"timestamp":"2026-03-01T21:09:18.297Z","sessionId":"5b1e7ca8-3ac1-43a9-a186-c0b8cb1ccb66","seq":2,"event":"spawn_error","data":{"error":"posix_spawnp failed."}}
+{"timestamp":"2026-03-01T21:09:47.393Z","sessionId":"5b1e7ca8-3ac1-43a9-a186-c0b8cb1ccb66","seq":1,"event":"session_start","data":{"tool":"gemini","task":"test_stop_fix","mode":"coding","contextDir":"/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server"}}
+{"timestamp":"2026-03-01T21:09:47.396Z","sessionId":"5b1e7ca8-3ac1-43a9-a186-c0b8cb1ccb66","seq":2,"event":"spawn_error","data":{"error":"posix_spawnp failed."}}

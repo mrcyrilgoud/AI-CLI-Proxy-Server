@@ -1,0 +1,2 @@
+{"timestamp":"2026-03-01T21:21:24.217Z","sessionId":"847c92c3-f7af-48f5-9f32-cfbfb1415d28","seq":1,"event":"session_start","data":{"tool":"gemini","task":"This is a full end-to-end test of the harness system.","mode":"coding","contextDir":"/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server"}}
+{"timestamp":"2026-03-01T21:21:24.221Z","sessionId":"847c92c3-f7af-48f5-9f32-cfbfb1415d28","seq":2,"event":"spawn_error","data":{"error":"posix_spawnp failed."}}

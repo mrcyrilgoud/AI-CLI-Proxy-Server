@@ -1,0 +1,47 @@
+[
+  {
+    "id": "df267e26-45a7-42ac-ab8f-94526cc31a39",
+    "tool": "gemini",
+    "task": "spawn_debug_test",
+    "contextDir": "/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server",
+    "mode": "coding",
+    "state": "completed",
+    "timeBudgetMs": null,
+    "startedAt": "2026-03-01T22:43:10.128Z",
+    "completedAt": "2026-03-01T22:43:25.171Z",
+    "createdAt": "2026-03-01T22:43:10.128Z",
+    "updatedAt": "2026-03-01T22:43:25.171Z",
+    "summary": "Session ended by client disconnect",
+    "error": null
+  },
+  {
+    "id": "6fd1f2d9-e947-449c-9bc4-4fb8360c0dda",
+    "tool": "gemini",
+    "task": "spawn_debug_test_live",
+    "contextDir": "/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server",
+    "mode": "coding",
+    "state": "running",
+    "timeBudgetMs": null,
+    "startedAt": "2026-03-01T22:45:17.896Z",
+    "completedAt": null,
+    "createdAt": "2026-03-01T22:45:17.892Z",
+    "updatedAt": "2026-03-01T22:45:17.896Z",
+    "summary": null,
+    "error": null
+  },
+  {
+    "id": "6b2c33a9-4556-479c-a9e7-005397de845d",
+    "tool": "gemini",
+    "task": "spawn_debug_test_live",
+    "contextDir": "/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server",
+    "mode": "coding",
+    "state": "running",
+    "timeBudgetMs": null,
+    "startedAt": "2026-03-01T22:45:40.899Z",
+    "completedAt": null,
+    "createdAt": "2026-03-01T22:45:40.896Z",
+    "updatedAt": "2026-03-01T22:45:40.899Z",
+    "summary": null,
+    "error": null
+  }
+]

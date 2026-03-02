@@ -1,0 +1,11 @@
+
+> web@0.0.0 dev
+> vite
+
+
+  VITE v7.3.1  ready in 98 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
+1:11:06 PM [vite] (client) hmr update /src/components/TerminalView.jsx
