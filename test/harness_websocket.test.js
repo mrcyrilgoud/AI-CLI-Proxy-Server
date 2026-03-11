@@ -8,12 +8,13 @@ const fs = require('fs');
 describe('Harness WebSocket Stream', () => {
     let server;
     let wsClient;
-    const TEST_PORT = 4444; // Use a different port for testing
+    let TEST_PORT;
 
     beforeAll((done) => {
-        // Start the server on a test port
+        // Use port 0 to let OS assign an available port
         server = http.createServer(app);
-        server.listen(TEST_PORT, () => {
+        server.listen(0, () => {
+            TEST_PORT = server.address().port;
             console.log(`Test server running on port ${TEST_PORT}`);
             setupWebSocket(server); // Pass SessionManager class to setupWebSocket
 
@@ -69,7 +70,7 @@ describe('Harness WebSocket Stream', () => {
             if (message.type === 'exit') {
                 ptyExited = true;
                 expect(message.code).toBe(0); // Expect a successful exit
-                
+
                 // Once the PTY has exited, we can perform final assertions
                 const session = sessionManager.get(sessionId);
                 expect(session).toBeDefined();
