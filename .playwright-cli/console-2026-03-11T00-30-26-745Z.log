@@ -1,0 +1,2 @@
+[   39072ms] [WARNING] WebSocket connection to 'ws://127.0.0.1:5174/api/harness/stream' failed: WebSocket is closed before the connection is established. @ http://127.0.0.1:5174/src/components/TerminalView.jsx:153
+[   72153ms] [WARNING] WebSocket connection to 'ws://127.0.0.1:5174/api/harness/stream' failed: WebSocket is closed before the connection is established. @ http://127.0.0.1:5174/src/components/TerminalView.jsx:153

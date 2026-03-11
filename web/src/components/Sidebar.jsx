@@ -1,12 +1,20 @@
+import { useEffect, useState } from 'react';
+
 /**
  * Sidebar — Session list with filtering and selection.
  */
 export default function Sidebar({ sessions, activeId, onSelect, onNewSession }) {
+    const [nowMs, setNowMs] = useState(() => Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => setNowMs(Date.now()), 60000);
+        return () => clearInterval(timer);
+    }, []);
+
     const formatTime = (iso) => {
         if (!iso) return '';
         const d = new Date(iso);
-        const now = new Date();
-        const diff = now - d;
+        const diff = nowMs - d.getTime();
         if (diff < 60000) return 'just now';
         if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
         if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
@@ -16,7 +24,7 @@ export default function Sidebar({ sessions, activeId, onSelect, onNewSession }) 
     const formatDuration = (session) => {
         if (!session.startedAt) return '';
         const start = new Date(session.startedAt).getTime();
-        const end = session.completedAt ? new Date(session.completedAt).getTime() : Date.now();
+        const end = session.completedAt ? new Date(session.completedAt).getTime() : nowMs;
         const mins = Math.floor((end - start) / 60000);
         if (mins < 1) return '<1min';
         return `${mins}min`;

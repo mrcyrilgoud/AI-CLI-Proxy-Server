@@ -25,9 +25,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadSessions();
+    const initialLoad = setTimeout(() => {
+      loadSessions();
+    }, 0);
     const interval = setInterval(loadSessions, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initialLoad);
+      clearInterval(interval);
+    };
   }, [loadSessions]);
 
   // Handle session selection (connect terminal)
@@ -208,29 +213,24 @@ export default function App() {
 
 /** Small inline component for the time budget display */
 function TimeBudgetBadge({ session }) {
-  const [percent, setPercent] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     if (!session.startedAt || !session.timeBudgetMs) return;
-
-    const update = () => {
-      const elapsed = Date.now() - new Date(session.startedAt).getTime();
-      setPercent(Math.min(100, Math.round((elapsed / session.timeBudgetMs) * 100)));
-    };
-    update();
-    const interval = setInterval(update, 5000);
+    const interval = setInterval(() => setNowMs(Date.now()), 5000);
     return () => clearInterval(interval);
   }, [session.startedAt, session.timeBudgetMs]);
 
+  const hasBudget = Boolean(session.timeBudgetMs && session.startedAt);
+  const elapsedMs = hasBudget ? nowMs - new Date(session.startedAt).getTime() : 0;
+  const percent = hasBudget ? Math.min(100, Math.round((elapsedMs / session.timeBudgetMs) * 100)) : 0;
+  const remainingMins = hasBudget ? Math.max(0, Math.round((session.timeBudgetMs - elapsedMs) / 60000)) : 0;
   const colorClass = percent >= 80 ? 'time-bar__fill--danger' : percent >= 50 ? 'time-bar__fill--warn' : 'time-bar__fill--ok';
-  const remaining = session.timeBudgetMs && session.startedAt
-    ? Math.max(0, Math.round((session.timeBudgetMs - (Date.now() - new Date(session.startedAt).getTime())) / 60000))
-    : 0;
 
   return (
     <div style={{ minWidth: '120px' }}>
       <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
-        {percent}% · {remaining}m left
+        {percent}% · {remainingMins}m left
       </div>
       <div className="time-bar">
         <div className={`time-bar__fill ${colorClass}`} style={{ width: `${percent}%` }} />

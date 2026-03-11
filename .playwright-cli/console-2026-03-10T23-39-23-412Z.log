@@ -1,0 +1,23 @@
+[  596151ms] [WARNING] WebSocket connection to 'ws://127.0.0.1:5174/api/harness/stream' failed: WebSocket is closed before the connection is established. @ http://127.0.0.1:5174/src/components/TerminalView.jsx:131
+[  596202ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5174/api/harness/stream' failed: Connection closed before receiving a handshake response @ http://127.0.0.1:5174/src/components/TerminalView.jsx:67
+[  600392ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  605389ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  610389ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  615388ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  620387ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  625385ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  630386ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  635391ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  640388ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  645390ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  650387ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  655389ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  660394ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  665388ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  670386ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  675388ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  680386ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  685386ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  690386ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  695386ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0
+[  700405ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0

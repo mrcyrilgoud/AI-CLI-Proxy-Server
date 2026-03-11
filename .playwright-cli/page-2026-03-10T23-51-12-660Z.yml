@@ -1,0 +1,18 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - generic [ref=e10]: AI Harness
+      - generic [ref=e11]: Control Panel
+    - button "+ New Session" [ref=e13] [cursor=pointer]
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - generic [ref=e16]: Sessions (0)
+      - button "+ New" [ref=e17] [cursor=pointer]
+    - generic [ref=e19]:
+      - text: No sessions yet.
+      - text: Create one to get started.
+  - generic [ref=e21]:
+    - generic [ref=e22]: ⚡
+    - generic [ref=e23]: Select a session or create a new one to get started
+    - button "+ New Session" [ref=e24] [cursor=pointer]
