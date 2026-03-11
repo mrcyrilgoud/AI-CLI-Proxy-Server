@@ -83,7 +83,7 @@ app.get('/api/harness/sessions/:id', (req, res) => {
     // Load trace summary if available
     let traceSummary = null;
     try {
-        const trace = new TraceLogger(session.id);
+        const trace = new TraceLogger(session.contextDir || process.cwd(), session.id);
         traceSummary = trace.getSummary();
     } catch { /* session might not have traces yet */ }
 
@@ -145,7 +145,7 @@ wss.on('connection', (ws) => {
                     return;
                 }
 
-                trace = new TraceLogger(sessionId);
+                trace = new TraceLogger(activeSession.contextDir || process.cwd(), sessionId);
                 await handleHarnessInit(ws, activeSession, tool, task, trace);
             } else if (payload.action === 'input' && global.activePtyProcesses && global.activePtyProcesses[payload.sessionId]) {
                 const ptyProcess = global.activePtyProcesses[payload.sessionId];
@@ -189,7 +189,7 @@ async function handleHarnessInit(ws, session, tool, task, trace) {
 
     // 1. Mark session as running
     sessionManager.start(session.id);
-    trace.sessionStarted(session);
+    trace.sessionStart(session);
 
     // 2. Initialize progress tracker
     const progressTracker = new ProgressTracker(safeContextDir);
@@ -201,16 +201,16 @@ async function handleHarnessInit(ws, session, tool, task, trace) {
 
     // 3. Initialize Middleware Pipeline
     const runner = new MiddlewareRunner();
-    runner.register(createContextInjectionMiddleware());
-    runner.register(createLoopDetectionMiddleware({
+    runner.use(createContextInjectionMiddleware());
+    runner.use(createLoopDetectionMiddleware({
         threshold: 5,
         windowSize: 20
     }));
-    runner.register(createPreCompletionMiddleware());
+    runner.use(createPreCompletionMiddleware());
 
     // Only apply strict time budget if in planning mode, roughly 2 mins
     if (session.mode === 'planning') {
-        runner.register(createTimeBudgetMiddleware({
+        runner.use(createTimeBudgetMiddleware({
             timeLimitMs: 120 * 1000,
             thresholds: [{ percent: 50, message: 'Half time used' }, { percent: 80, message: 'Time warning' }]
         }));
@@ -254,6 +254,11 @@ async function handleHarnessInit(ws, session, tool, task, trace) {
             env: { ...process.env, FORCE_COLOR: '1' },
             stdio: ['pipe', 'pipe', 'pipe']
         });
+        cp.stdin.on('error', (err) => {
+            if (err && err.code !== 'EPIPE') {
+                console.error('[Harness WSS] stdin error:', err.message);
+            }
+        });
 
         // Eagerly bind handlers so NO streamed output is dropped while async middleware runs
         const dataHandlers = [];
@@ -264,7 +269,16 @@ async function handleHarnessInit(ws, session, tool, task, trace) {
         cp.on('exit', (code, signal) => exitHandlers.forEach(cb => cb({ exitCode: code, signal })));
 
         ptyProcess = {
-            write: (data) => cp.stdin.write(data),
+            write: (data) => {
+                if (!cp.stdin || cp.stdin.destroyed || cp.stdin.writableEnded || !cp.stdin.writable) {
+                    return;
+                }
+                try {
+                    cp.stdin.write(data);
+                } catch {
+                    // Process already exited; ignore late middleware writes.
+                }
+            },
             onData: (cb) => dataHandlers.push(cb),
             onExit: (cb) => exitHandlers.push(cb),
             kill: () => cp.kill()
@@ -329,7 +343,7 @@ async function handleHarnessInit(ws, session, tool, task, trace) {
             }
         }
 
-        trace.sessionCompleted(sessionManager.get(session.id));
+        trace.sessionEnd(sessionManager.get(session.id));
         trace.close();
 
         if (ws.readyState === WebSocket.OPEN) {
@@ -372,6 +386,21 @@ function buildLowLevelArgs(tool, prompt, files) {
             return ['--query', prompt, ...files.map(f => `--file=${f}`)];
         default:
             return [prompt, ...files];
+    }
+}
+
+function buildHarnessArgs(tool, task) {
+    switch (tool) {
+        case 'gemini':
+            return [task, '--yolo'];
+        case 'opencode':
+            return ['run-task', task, '--yes'];
+        case 'codex':
+            return ['--harness', task, '--autonomous'];
+        case 'cursor':
+            return ['--task', task, '--auto-confirm'];
+        default:
+            return [task];
     }
 }
 

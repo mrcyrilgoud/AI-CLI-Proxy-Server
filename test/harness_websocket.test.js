@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const http = require('http');
-const { app } = require('../server'); // Import app from server
-const { setupWebSocket, sessionManager, SessionManager } = require('../harness-api'); // Import from harness-api
+const app = require('../server');
+const { setupWebSocket, sessionManager } = require('../harness-api');
 const path = require('path');
 const fs = require('fs');
 

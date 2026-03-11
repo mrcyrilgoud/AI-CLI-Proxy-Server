@@ -1,7 +1,16 @@
+import { useEffect, useState } from 'react';
+
 /**
  * Middleware status panel — shows live status of each middleware.
  */
 export default function MiddlewarePanel({ session, events = [] }) {
+    const [nowMs, setNowMs] = useState(() => Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => setNowMs(Date.now()), 5000);
+        return () => clearInterval(timer);
+    }, []);
+
     // Compute statuses from events
     const getMiddlewareStatus = (name) => {
         const relevant = events.filter(e => e.middleware === name);
@@ -10,7 +19,6 @@ export default function MiddlewarePanel({ session, events = [] }) {
     };
 
     const loopEvent = getMiddlewareStatus('loopDetection');
-    const timeEvent = getMiddlewareStatus('timeBudget');
     const preCompEvent = getMiddlewareStatus('preCompletion');
     const contextEvent = getMiddlewareStatus('contextInjection');
 
@@ -18,7 +26,7 @@ export default function MiddlewarePanel({ session, events = [] }) {
     let timePercent = 0;
     let timeLabel = 'No budget';
     if (session?.timeBudgetMs && session?.startedAt) {
-        const elapsed = Date.now() - new Date(session.startedAt).getTime();
+        const elapsed = nowMs - new Date(session.startedAt).getTime();
         timePercent = Math.min(100, Math.round((elapsed / session.timeBudgetMs) * 100));
         const remaining = Math.max(0, Math.round((session.timeBudgetMs - elapsed) / 60000));
         timeLabel = `${timePercent}% · ${remaining}m left`;

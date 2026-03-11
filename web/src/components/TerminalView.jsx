@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -76,6 +76,23 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
         termInstance.current = term;
         fitAddon.current = fit;
 
+        const isLiveSession = session.state === 'created' || session.state === 'running';
+        if (!isLiveSession) {
+            term.writeln(`\x1b[90m[harness] Session is ${session.state}. Live stream is unavailable.\x1b[0m`);
+
+            const handleResize = () => {
+                if (fitAddon.current) fitAddon.current.fit();
+            };
+            window.addEventListener('resize', handleResize);
+            const fitTimer = setTimeout(() => fit.fit(), 150);
+
+            return () => {
+                clearTimeout(fitTimer);
+                window.removeEventListener('resize', handleResize);
+                term.dispose();
+            };
+        }
+
         // Connect WebSocket
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
@@ -112,10 +129,17 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
                     case 'exit':
                         term.writeln('');
                         term.writeln(`\x1b[90m[harness] Session ended (exit code: ${msg.code})\x1b[0m`);
-                        onSessionUpdateRef.current?.({ state: msg.code === 0 ? 'completed' : 'failed' });
+                        onSessionUpdateRef.current?.({ state: (msg.code === 0 || msg.code === null) ? 'completed' : 'failed' });
                         break;
                     case 'error':
                         term.writeln(`\x1b[31m[harness] Error: ${msg.error}\x1b[0m`);
+                        if (typeof msg.error === 'string' && msg.error.startsWith('Session is in state:')) {
+                            const state = msg.error.split(':').pop()?.trim();
+                            if (state) {
+                                onSessionUpdateRef.current?.({ state });
+                                break;
+                            }
+                        }
                         onSessionUpdateRef.current?.({ state: 'failed' });
                         break;
                     default:
@@ -155,7 +179,9 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
         return () => {
             clearTimeout(fitTimer);
             window.removeEventListener('resize', handleResize);
-            ws.close();
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            }
             term.dispose();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,0 +1,48 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - generic [ref=e10]: AI Harness
+      - generic [ref=e11]: Control Panel
+    - button "+ New Session" [active] [ref=e13] [cursor=pointer]
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - generic [ref=e16]: Sessions (0)
+      - button "+ New" [ref=e17] [cursor=pointer]
+    - generic [ref=e19]:
+      - text: No sessions yet.
+      - text: Create one to get started.
+  - generic [ref=e21]:
+    - generic [ref=e22]: ⚡
+    - generic [ref=e23]: Select a session or create a new one to get started
+    - button "+ New Session" [ref=e24] [cursor=pointer]
+  - generic [ref=e26]:
+    - heading "New Session" [level=2] [ref=e27]
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]: CLI Tool
+        - combobox "CLI Tool" [ref=e31]:
+          - option "gemini" [selected]
+          - option "opencode"
+          - option "codex"
+          - option "cursor"
+      - generic [ref=e32]:
+        - generic [ref=e33]: Task Description
+        - textbox "Task Description" [ref=e34]:
+          - /placeholder: Build a responsive login page with email/password...
+      - generic [ref=e35]:
+        - generic [ref=e36]: Working Directory
+        - textbox "Working Directory" [ref=e37]:
+          - /placeholder: /path/to/project (optional)
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - generic [ref=e40]: Mode
+          - combobox "Mode" [ref=e41]:
+            - option "Coding" [selected]
+            - option "Initializer"
+        - generic [ref=e42]:
+          - generic [ref=e43]: Time Budget (min)
+          - spinbutton "Time Budget (min)" [ref=e44]: "30"
+      - generic [ref=e45]:
+        - button "Cancel" [ref=e46] [cursor=pointer]
+        - button "Create & Connect" [disabled] [ref=e47] [cursor=pointer]
