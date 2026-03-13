@@ -31,7 +31,12 @@ function createContextInjectionMiddleware() {
                     });
                 }
 
-                return { data: context };
+                return {
+                    data: {
+                        context,
+                        injectionText: text,
+                    },
+                };
             } catch (err) {
                 console.error('[ContextInjection] Error:', err.message);
                 if (trace) {

@@ -12,6 +12,7 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
     const termInstance = useRef(null);
     const fitAddon = useRef(null);
     const wsRef = useRef(null);
+    const codexInputNoticeShown = useRef(false);
 
     // Stable refs for callbacks — avoids re-render reconnection loops
     const onMiddlewareEventRef = useRef(onMiddlewareEvent);
@@ -101,6 +102,9 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
 
         ws.onopen = () => {
             term.writeln('\x1b[90m[harness] Connecting to session...\x1b[0m');
+            if (session.tool === 'codex') {
+                term.writeln('\x1b[90m[harness] Codex runs in non-interactive exec mode for this session.\x1b[0m');
+            }
             ws.send(JSON.stringify({
                 action: 'init',
                 tool: session.tool,
@@ -142,6 +146,9 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
                         }
                         onSessionUpdateRef.current?.({ state: 'failed' });
                         break;
+                    case 'input_disabled':
+                        term.writeln('\x1b[90m[harness] Input disabled for this session.\x1b[0m');
+                        break;
                     default:
                         if (msg.middleware) {
                             onMiddlewareEventRef.current?.(msg);
@@ -162,8 +169,19 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
 
         // Forward terminal input to WebSocket
         term.onData((data) => {
+            if (session.tool === 'codex') {
+                if (!codexInputNoticeShown.current) {
+                    term.writeln('\r\n\x1b[90m[harness] This Codex run is non-interactive; input is ignored.\x1b[0m');
+                    codexInputNoticeShown.current = true;
+                }
+                return;
+            }
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(data);
+                ws.send(JSON.stringify({
+                    action: 'input',
+                    sessionId: session.id,
+                    data,
+                }));
             }
         });
 
