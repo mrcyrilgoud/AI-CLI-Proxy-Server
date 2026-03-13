@@ -159,6 +159,7 @@ wss.on('connection', (ws) => {
     let activeSession = null;
     let trace = null;
     let runner = null;
+    const reattachUnsubscribers = [];
 
     ws.on('message', async (message) => {
         try {
@@ -203,16 +204,22 @@ wss.on('connection', (ws) => {
                     }));
                     ws.send(JSON.stringify({ type: 'output', data: '\x1b[90m[harness] Reattached to running session.\x1b[0m\r\n' }));
 
-                    liveProcess.onData((data) => {
+                    const unsubscribeData = liveProcess.onData((data) => {
                         if (ws.readyState === WebSocket.OPEN) {
                             ws.send(JSON.stringify({ type: 'output', data }));
                         }
                     });
-                    liveProcess.onExit(({ exitCode }) => {
+                    const unsubscribeExit = liveProcess.onExit(({ exitCode }) => {
                         if (ws.readyState === WebSocket.OPEN) {
                             ws.send(JSON.stringify({ type: 'exit', code: exitCode, sessionId }));
                         }
                     });
+                    if (typeof unsubscribeData === 'function') {
+                        reattachUnsubscribers.push(unsubscribeData);
+                    }
+                    if (typeof unsubscribeExit === 'function') {
+                        reattachUnsubscribers.push(unsubscribeExit);
+                    }
                     return;
                 }
 
@@ -263,6 +270,10 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => {
+        while (reattachUnsubscribers.length > 0) {
+            const unsubscribe = reattachUnsubscribers.pop();
+            try { unsubscribe(); } catch { }
+        }
         if (process.env.NODE_ENV !== 'test') {
             console.log('Client disconnected from harness stream');
         }
@@ -363,6 +374,7 @@ async function handleHarnessInit(ws, session, tool, task, trace) {
             },
         });
         injectFn = () => { };
+        global.activePtyProcesses[session.id] = ptyProcess;
         ws.send(JSON.stringify({ type: 'output', data: `\x1b[90m${CODEX_NON_INTERACTIVE_NOTE}\x1b[0m\r\n` }));
     } else {
         // 5. Build harness args and resolve command
@@ -413,10 +425,23 @@ async function handleHarnessInit(ws, session, tool, task, trace) {
                         // Process already exited; ignore late middleware writes.
                     }
                 },
-                onData: (cb) => dataHandlers.push(cb),
-                onExit: (cb) => exitHandlers.push(cb),
+                onData: (cb) => {
+                    dataHandlers.push(cb);
+                    return () => {
+                        const idx = dataHandlers.indexOf(cb);
+                        if (idx >= 0) dataHandlers.splice(idx, 1);
+                    };
+                },
+                onExit: (cb) => {
+                    exitHandlers.push(cb);
+                    return () => {
+                        const idx = exitHandlers.indexOf(cb);
+                        if (idx >= 0) exitHandlers.splice(idx, 1);
+                    };
+                },
                 kill: () => cp.kill()
             };
+            global.activePtyProcesses[session.id] = ptyProcess;
         } catch (err) {
             sessionManager.fail(session.id, err.message);
             trace.log('spawn_error', { error: err.message });
@@ -435,8 +460,6 @@ async function handleHarnessInit(ws, session, tool, task, trace) {
         });
         injectFn = (text) => ptyProcess.write(text);
     }
-
-    global.activePtyProcesses[session.id] = ptyProcess;
 
     // 8. Pipe streamed output through middleware pipeline back to WebSocket
     ptyProcess.onData((data) => {
@@ -742,8 +765,20 @@ function spawnCodexHarnessProcess({ sessionId, contextDir, prompt, onError }) {
 
     return {
         write: () => { },
-        onData: (cb) => dataHandlers.push(cb),
-        onExit: (cb) => exitHandlers.push(cb),
+        onData: (cb) => {
+            dataHandlers.push(cb);
+            return () => {
+                const idx = dataHandlers.indexOf(cb);
+                if (idx >= 0) dataHandlers.splice(idx, 1);
+            };
+        },
+        onExit: (cb) => {
+            exitHandlers.push(cb);
+            return () => {
+                const idx = exitHandlers.indexOf(cb);
+                if (idx >= 0) exitHandlers.splice(idx, 1);
+            };
+        },
         kill: () => cp.kill(),
     };
 }
