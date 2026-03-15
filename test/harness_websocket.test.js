@@ -4,26 +4,20 @@ const app = require('../server');
 const { setupWebSocket, sessionManager } = require('../harness-api');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 describe('Harness WebSocket Stream', () => {
     let server;
     let wsClient;
     let TEST_PORT;
+    let contextDir;
 
     beforeAll((done) => {
-        // Use port 0 to let OS assign an available port
+        contextDir = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-ws-'));
         server = http.createServer(app);
         server.listen(0, () => {
             TEST_PORT = server.address().port;
-            console.log(`Test server running on port ${TEST_PORT}`);
-            setupWebSocket(server); // Pass SessionManager class to setupWebSocket
-
-            // Clear any existing sessions from previous test runs
-            const harnessDir = path.join(process.cwd(), '.harness');
-            const sessionsFile = path.join(harnessDir, 'sessions.json');
-            if (fs.existsSync(sessionsFile)) {
-                fs.unlinkSync(sessionsFile);
-            }
+            setupWebSocket(server);
             done();
         });
     });
@@ -43,12 +37,11 @@ describe('Harness WebSocket Stream', () => {
         let ptyExited = false;
 
         wsClient.onopen = () => {
-            // Send init payload for spawn_debug_test
             wsClient.send(JSON.stringify({
                 action: 'init',
                 tool: 'gemini',
                 task: 'spawn_debug_test',
-                contextDir: process.cwd()
+                contextDir
             }));
         };
 
@@ -61,24 +54,20 @@ describe('Harness WebSocket Stream', () => {
             }
 
             if (message.type === 'output') {
-                // We expect some output from the 'gemini spawn_debug_test --yolo' command
-                // The exact output might vary, so we'll just check if there's any output.
                 expect(message.data).toBeDefined();
                 expect(typeof message.data).toBe('string');
             }
 
             if (message.type === 'exit') {
                 ptyExited = true;
-                expect(message.code).toBe(0); // Expect a successful exit
+                expect(message.code).toBe(0);
 
-                // Once the PTY has exited, we can perform final assertions
                 const session = sessionManager.get(sessionId);
                 expect(session).toBeDefined();
                 expect(session.state).toBe('completed');
                 expect(session.tool).toBe('gemini');
                 expect(session.task).toBe('spawn_debug_test');
 
-                // Check for some output messages
                 const outputMessages = messages.filter(m => m.type === 'output');
                 expect(outputMessages.length).toBeGreaterThan(0);
 

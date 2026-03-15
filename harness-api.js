@@ -1,140 +1,145 @@
 const WebSocket = require('ws');
 const { spawn, spawnSync } = require('child_process');
-const { SessionManager, ProgressTracker, ContextEngine, TraceLogger, MiddlewareRunner } = require('./harness');
+const { SessionManager, ProgressTracker, TraceLogger, MiddlewareRunner } = require('./harness');
 const createContextInjectionMiddleware = require('./harness/middleware/contextInjection');
 const createLoopDetectionMiddleware = require('./harness/middleware/loopDetection');
 const createPreCompletionMiddleware = require('./harness/middleware/preCompletion');
 const createTimeBudgetMiddleware = require('./harness/middleware/timeBudget');
+const { buildHarnessArgs, getUnsupportedToolMessage, isSupportedTool } = require('./cli-tools');
 
-// Shared SessionManager instance
 const sessionManager = new SessionManager();
 
-let wss; // Declare wss here so it can be assigned by setupWebSocket
+const DEBUG_TASK = 'spawn_debug_test';
+const DEBUG_SCRIPT = `
+const task = process.argv[1];
+const lines = [
+  'Harness test output for: ' + task,
+  'progress: 1',
+  'progress: 2',
+  'progress: 3'
+];
+let index = 0;
+const timer = setInterval(() => {
+  if (index >= lines.length) {
+    clearInterval(timer);
+    process.exit(0);
+    return;
+  }
 
-const ALLOWED_TOOLS = ['gemini', 'opencode', 'codex', 'cursor'];
+  process.stdout.write(lines[index] + '\\n');
+  index += 1;
+}, 40);
 
-/**
- * Sets up the WebSocket Server for the harness stream.
- * @param {http.Server} httpServer The HTTP server instance to attach the WebSocket server to.
- */
+process.stdin.resume();
+process.on('SIGTERM', () => {
+  clearInterval(timer);
+  process.exit(0);
+});
+`;
+
 function setupWebSocket(httpServer) {
-    wss = new WebSocket.Server({ server: httpServer, path: '/api/harness/stream' });
+    const wss = new WebSocket.Server({ server: httpServer, path: '/api/harness/stream' });
 
     wss.on('connection', (ws) => {
-        console.log('Client connected to harness stream');
-        let ptyProcess = null;
-        let activeSession = null;
-        let traceLogger = null;
-        let middlewareRunner = null;
+        if (process.env.NODE_ENV !== 'test') {
+            console.log('Client connected to harness stream');
+        }
 
-        ws.on('message', (message) => {
+        let activeSession = null;
+        let ptyProcess = null;
+        let traceLogger = null;
+        let closed = false;
+
+        ws.on('message', async (rawMessage) => {
             try {
-                // Check if the message is a JSON initialization payload
-                const payload = JSON.parse(message.toString());
+                const payload = JSON.parse(rawMessage.toString());
 
                 if (payload.action === 'init') {
-                    // Guard against double-init: kill any existing PTY first
-                    if (ptyProcess) {
-                        console.warn('[Harness WSS] Re-init requested, killing existing PTY process');
-                        ptyProcess.kill();
-                        ptyProcess = null;
-                        if (traceLogger) { traceLogger.close(); traceLogger = null; }
+                    const result = await handleHarnessInit(ws, payload);
+                    activeSession = result.session;
+                    ptyProcess = result.ptyProcess;
+                    traceLogger = result.trace;
+                    return;
+                }
+
+                if (payload.action === 'input') {
+                    if (!ptyProcess) {
+                        ws.send(JSON.stringify({ type: 'error', error: 'Cannot send input before initialization payload' }));
+                        return;
                     }
 
-                    handleHarnessInit(ws, payload).then(result => {
-                        ptyProcess = result.ptyProcess;
-                        activeSession = result.session;
-                        traceLogger = result.trace;
-                        middlewareRunner = result.middlewareRunner;
-                    }).catch(err => {
-                        console.error('[Harness WSS] Init error:', err);
-                        ws.send(JSON.stringify({ type: 'error', error: err.message }));
-                    });
-                } else if (payload.action === 'stop') {
-                    // Stop the running session
-                    const targetSessionId = activeSession?.id || payload.sessionId;
+                    ptyProcess.write(payload.data || '');
+                    return;
+                }
 
-                    if (ptyProcess) {
-                        console.log('[Harness WSS] Stop requested, killing PTY process');
-                        ptyProcess.kill();
-                        ptyProcess = null;
+                if (payload.action === 'stop') {
+                    if (!ptyProcess || !activeSession) {
+                        ws.send(JSON.stringify({ type: 'error', error: 'Unknown action or invalid state' }));
+                        return;
                     }
-                    if (targetSessionId) {
-                        try {
-                            sessionManager.complete(targetSessionId, 'Stopped by user');
-                        } catch (err) {
-                            console.error('[Harness WSS] Failed to complete session:', err.message);
-                        }
-                        if (traceLogger) {
-                            traceLogger.log('session_stopped', { reason: 'user_request' });
-                            traceLogger.close();
-                            traceLogger = null;
-                        }
-                    }
-                    ws.send(JSON.stringify({ type: 'stopped', sessionId: targetSessionId }));
-                    activeSession = null;
+
+                    ptyProcess.kill();
+                    sessionManager.complete(activeSession.id, 'Stopped by user');
+                    ws.send(JSON.stringify({ type: 'stopped', sessionId: activeSession.id }));
+                    return;
                 }
-            } catch (e) {
-                // If the message is not JSON, assume it is raw stdin string data meant for the active PTY process
-                if (ptyProcess) {
-                    // Run input through middleware pipeline
-                    if (middlewareRunner && activeSession) {
-                        middlewareRunner.run('pty:input', {
-                            data: message.toString(),
-                            session: activeSession,
-                            context: null,
-                            inject: (text) => ptyProcess.write(text),
-                            trace: traceLogger,
-                        }).then(({ data: processedData, suppress }) => {
-                            if (!suppress) {
-                                ptyProcess.write(processedData);
-                            }
-                        });
-                    } else {
-                        ptyProcess.write(message.toString());
-                    }
-                } else {
-                    ws.send(JSON.stringify({ error: 'Cannot send input before initialization payload' }));
+
+                ws.send(JSON.stringify({ type: 'error', error: 'Unknown action or invalid state' }));
+            } catch (error) {
+                if (!ptyProcess) {
+                    ws.send(JSON.stringify({ type: 'error', error: error.message }));
+                    return;
                 }
+
+                ptyProcess.write(rawMessage.toString());
             }
         });
 
         ws.on('close', () => {
+            closed = true;
+
+            if (activeSession) {
+                const currentSession = sessionManager.get(activeSession.id);
+                if (currentSession && currentSession.state === 'running') {
+                    sessionManager.complete(activeSession.id, 'Session ended by client disconnect');
+                }
+            }
+
+            if (traceLogger && typeof traceLogger.close === 'function') {
+                try {
+                    traceLogger.sessionEnd(sessionManager.get(activeSession.id) || { state: 'unknown' });
+                    traceLogger.close();
+                } catch {
+                    // best effort
+                }
+            }
+
+            if (ptyProcess) {
+                ptyProcess.kill();
+                ptyProcess = null;
+            }
+
             if (process.env.NODE_ENV !== 'test') {
                 console.log('Client disconnected from harness stream');
             }
-            if (activeSession) {
-                // Get fresh session state (activeSession is a snapshot from init time)
-                const currentSession = sessionManager.get(activeSession.id);
-                try {
-                    if (currentSession && currentSession.state === 'running') {
-                        sessionManager.complete(activeSession.id, 'Session ended by client disconnect');
-                    }
-                } catch { /* ignore */ }
+        });
 
-                if (traceLogger) {
-                    traceLogger.sessionEnd(sessionManager.get(activeSession.id) || { state: 'unknown' });
-                    traceLogger.close();
-                }
+        ws.on('error', (error) => {
+            if (closed) {
+                return;
             }
-            if (ptyProcess) {
-                ptyProcess.kill();
-            }
+
+            console.error('[Harness WSS] Connection error:', error);
         });
     });
 
-    // Handle WebSocket server errors
     wss.on('error', (error) => {
         console.error('[Harness WSS] WebSocket server error:', error);
     });
+
+    return wss;
 }
 
-/**
- * Handle the harness init action — wires up the full harness pipeline.
- * @param {WebSocket} ws
- * @param {object} payload — { tool, task, contextDir, sessionId?, mode?, timeBudgetMs? }
- * @returns {Promise<{ptyProcess, session, trace, middlewareRunner}>}
- */
 async function handleHarnessInit(ws, payload) {
     const { tool, task, contextDir, sessionId, mode, timeBudgetMs } = payload;
 
@@ -142,8 +147,8 @@ async function handleHarnessInit(ws, payload) {
         throw new Error('Tool and task are required for initialization');
     }
 
-    if (!ALLOWED_TOOLS.includes(tool)) {
-        throw new Error(`Unsupported CLI tool. Allowed tools: ${ALLOWED_TOOLS.join(', ')}`);
+    if (!isSupportedTool(tool)) {
+        throw new Error(getUnsupportedToolMessage());
     }
 
     if (typeof task !== 'string') {
@@ -151,15 +156,13 @@ async function handleHarnessInit(ws, payload) {
     }
 
     const safeContextDir = typeof contextDir === 'string' ? contextDir : process.cwd();
+    let session = sessionId ? sessionManager.get(sessionId) : null;
 
-    // 1. Create or resume session
-    let session;
-    if (sessionId) {
-        session = sessionManager.get(sessionId);
-        if (!session) {
-            throw new Error(`Session not found: ${sessionId}`);
-        }
-    } else {
+    if (sessionId && !session) {
+        throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    if (!session) {
         session = sessionManager.create({
             tool,
             task,
@@ -169,21 +172,25 @@ async function handleHarnessInit(ws, payload) {
         });
     }
 
-    // 2. Start the session
+    if (session.state !== 'created') {
+        throw new Error(`Session is in state: ${session.state}`);
+    }
+
     session = sessionManager.start(session.id);
 
-    // 3. Initialize trace logger
     const trace = new TraceLogger(safeContextDir, session.id);
     trace.sessionStart(session);
 
-    // 4. Set up middleware pipeline
-    const runner = new MiddlewareRunner();
-    runner.use(createContextInjectionMiddleware());
-    runner.use(createLoopDetectionMiddleware());
-    runner.use(createPreCompletionMiddleware());
-    runner.use(createTimeBudgetMiddleware());
+    const runner = createMiddlewareRunner(session);
+    const ptyProcess = spawnHarnessProcess({ tool, task, cwd: safeContextDir, ws, sessionId: session.id });
+    const contextResult = await runner.run('session:start', {
+        data: null,
+        session,
+        context: null,
+        inject: (text) => ptyProcess.write(text),
+        trace,
+    });
 
-    // 5. Send session info to the client
     ws.send(JSON.stringify({
         type: 'session',
         session: {
@@ -194,162 +201,186 @@ async function handleHarnessInit(ws, payload) {
         },
     }));
 
-    // 6. Build harness args and resolve PTY command
-    const args = buildHarnessArgs(tool, task);
-    console.log(`[Harness WSS] Preparing to spawn PTY for session ${session.id}: ${tool} in ${safeContextDir} with args:`, args);
-
-    // Always use 'bash' to spawn to avoid node-pty posix_spawnp crashes
-    // on macOS when dealing with non-binary scripts (like gemini or npx).
-    const hasTool = spawnSync('which', [tool]).status === 0;
-    const escapedArgs = args.map(a => '"' + a.replace(/"/g, '\"') + '"').join(' ');
-
-    let commandLine = '';
-
-    // Deterministic smoke path for tests that should not depend on external CLI availability.
-    if (task === 'spawn_debug_test') {
-        commandLine = `echo "Harness test output for: ${task}"`;
-    } else if (hasTool) {
-        commandLine = `${tool} ${escapedArgs}`;
-    } else {
-        console.log(`[Harness WSS] Tool '${tool}' not found in PATH. Falling back to npx...`);
-        ws.send(JSON.stringify({ type: 'output', data: `\x1b[90m[harness] Tool '${tool}' not found globally. Trying via npx...\x1b[0m\r\n` }));
-        commandLine = `npx --yes ${tool} ${escapedArgs}`;
-    }
-
-    let ptyProcess;
-    try {
-        // Fallback to native child_process.spawn due to node-pty posix_spawnp ABI crash on Node v25+ macOS
-        const cp = spawn('bash', ['-c', commandLine], {
-            cwd: safeContextDir,
-            env: { ...process.env, FORCE_COLOR: '1' },
-        });
-        cp.stdin.on('error', (err) => {
-            if (err && err.code !== 'EPIPE') {
-                console.error('[Harness WSS] stdin error:', err.message);
-            }
-        });
-
-        // Mock node-pty interface to maintain middleware pipeline compatibility
-        ptyProcess = {
-            write: (data) => {
-                if (!cp.stdin || cp.stdin.destroyed || cp.stdin.writableEnded || !cp.stdin.writable) {
-                    return;
-                }
-                try {
-                    cp.stdin.write(data);
-                } catch {
-                    // Process already exited; ignore late middleware writes.
-                }
-            },
-            onData: (cb) => {
-                cp.stdout.on('data', d => cb(d.toString()));
-                cp.stderr.on('data', d => cb(d.toString()));
-            },
-            onExit: (cb) => {
-                cp.on('exit', (code, signal) => {
-                    console.log(`[Harness WSS - PTY Mock] Child process exited with code ${code}, signal ${signal}`);
-                    cb({ exitCode: code, signal });
-                });
-            },
-            kill: () => cp.kill()
-        };
-    } catch (err) {
-        // Init failed (e.g. bash not found), mark session failed so it doesn't get stuck running
-        sessionManager.fail(session.id, err.message);
-        trace.log('spawn_error', { error: err.message });
-        trace.close();
-        throw err;
-    }
-
-    // 7. Run session:start middleware (context injection, etc.)
-    const contextResult = await runner.run('session:start', {
-        data: null,
-        session,
-        context: null,
-        inject: (text) => ptyProcess.write(text),
-        trace,
-    });
-
-    // 8. Pipe PTY output through middleware pipeline back to WebSocket
     ptyProcess.onData((data) => {
-        // Log raw output
         trace.toolOutput(data);
 
-        // Run pty:output middleware (loop detection, pre-completion, time budget)
         runner.run('pty:output', {
             data,
-            session: sessionManager.get(session.id), // Get fresh session state for time tracking
+            session: sessionManager.get(session.id),
             context: contextResult.data,
             inject: (text) => ptyProcess.write(text),
             trace,
         }).then(({ data: processedData, suppress }) => {
-            if ((!suppress) && ws.readyState === WebSocket.OPEN) {
+            if (!suppress && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'output', data: processedData }));
             }
+        }).catch((error) => {
+            console.error('[MiddlewareRunner] Error inside pty:output chain:', error);
         });
     });
 
-    // 9. Handle PTY exit
     ptyProcess.onExit(({ exitCode, signal }) => {
-        console.log(`[Harness WSS] PTY process exited with code ${exitCode} (session ${session.id})`);
+        finalizeSession({ exitCode, signal, ptyProcess, runner, session, trace, ws, contextDir: safeContextDir, task, tool });
+    });
 
-        // Run session:exit middleware
-        runner.run('session:exit', {
-            data: { exitCode, signal },
-            session: sessionManager.get(session.id),
-            context: null,
-            inject: () => { }, // Can't inject after exit
-            trace,
+    return { ptyProcess, session, trace };
+}
+
+function createMiddlewareRunner(session) {
+    const runner = new MiddlewareRunner();
+    runner.use(createContextInjectionMiddleware());
+    runner.use(createLoopDetectionMiddleware({
+        threshold: 5,
+        windowSize: 20,
+    }));
+    runner.use(createPreCompletionMiddleware());
+
+    if (session.mode === 'planning') {
+        runner.use(createTimeBudgetMiddleware({
+            timeLimitMs: 120000,
+            thresholds: [
+                { percent: 50, message: 'Half time used' },
+                { percent: 80, message: 'Time warning' },
+            ],
+        }));
+    } else {
+        runner.use(createTimeBudgetMiddleware());
+    }
+
+    return runner;
+}
+
+function spawnHarnessProcess({ tool, task, cwd, ws, sessionId }) {
+    if (task === DEBUG_TASK) {
+        return createProcessAdapter(spawn(process.execPath, ['-e', DEBUG_SCRIPT, task], {
+            cwd,
+            env: { ...process.env, FORCE_COLOR: '1' },
+            stdio: ['pipe', 'pipe', 'pipe'],
+        }));
+    }
+
+    const args = buildHarnessArgs(tool, task);
+    const hasTool = spawnSync('which', [tool], { stdio: 'ignore' }).status === 0;
+    const command = hasTool ? tool : 'npx';
+    const commandArgs = hasTool ? args : ['--yes', tool, ...args];
+
+    if (!hasTool && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'output',
+            data: `\x1b[90m[harness] Tool '${tool}' not found globally. Trying via npx...\x1b[0m\r\n`,
+        }));
+    }
+
+    if (process.env.NODE_ENV !== 'test') {
+        console.log(`[Harness WSS] Spawning session ${sessionId}: ${command} ${commandArgs.join(' ')}`);
+    }
+
+    return createProcessAdapter(spawn(command, commandArgs, {
+        cwd,
+        env: { ...process.env, FORCE_COLOR: '1' },
+        stdio: ['pipe', 'pipe', 'pipe'],
+    }));
+}
+
+function createProcessAdapter(childProcess) {
+    const dataHandlers = [];
+    const exitHandlers = [];
+
+    const emitData = (chunk) => {
+        const data = chunk.toString();
+        for (const handler of dataHandlers) {
+            handler(data);
+        }
+    };
+
+    childProcess.stdout.on('data', emitData);
+    childProcess.stderr.on('data', emitData);
+    childProcess.on('exit', (code, signal) => {
+        for (const handler of exitHandlers) {
+            handler({ exitCode: code, signal });
+        }
+    });
+
+    if (childProcess.stdin && typeof childProcess.stdin.on === 'function') {
+        childProcess.stdin.on('error', (error) => {
+            if (error && error.code !== 'EPIPE') {
+                console.error('[Harness WSS] stdin error:', error.message);
+            }
         });
+    }
 
-        // Update session state
-        if (exitCode === 0) {
-            sessionManager.complete(session.id, `Completed with exit code ${exitCode}`);
+    return {
+        write(data) {
+            if (!childProcess.stdin || childProcess.stdin.destroyed || childProcess.stdin.writableEnded || !childProcess.stdin.writable) {
+                return;
+            }
+
+            try {
+                childProcess.stdin.write(data);
+            } catch {
+                // Ignore writes after exit.
+            }
+        },
+        onData(handler) {
+            dataHandlers.push(handler);
+        },
+        onExit(handler) {
+            exitHandlers.push(handler);
+        },
+        kill() {
+            childProcess.kill();
+        },
+    };
+}
+
+function finalizeSession({ exitCode, signal, runner, session, trace, ws, contextDir, task, tool }) {
+    runner.run('session:exit', {
+        data: { exitCode, signal },
+        session: sessionManager.get(session.id),
+        context: null,
+        inject: () => { },
+        trace,
+    }).catch((error) => {
+        console.error('[MiddlewareRunner] Error inside session:exit chain:', error);
+    });
+
+    const currentSession = sessionManager.get(session.id);
+    if (currentSession && currentSession.state === 'running') {
+        if (exitCode === 0 || exitCode === null) {
+            sessionManager.complete(session.id, 'Task finished successfully.');
         } else {
             sessionManager.fail(session.id, `Exited with code ${exitCode}`);
         }
+    }
 
-        // Record progress
-        try {
-            const tracker = new ProgressTracker(safeContextDir);
-            tracker.addProgress({
-                sessionId: session.id,
-                tool,
-                summary: `Session ended (exit code: ${exitCode}). Task: ${task}`,
-            });
-        } catch { /* best effort */ }
+    try {
+        const tracker = new ProgressTracker(contextDir);
+        const finishedSession = sessionManager.get(session.id);
+        tracker.addProgress({
+            sessionId: session.id,
+            tool,
+            summary: buildProgressSummary({ exitCode, task, finishedSession }),
+        });
+    } catch {
+        // best effort
+    }
 
-        // Finalize trace
-        trace.sessionEnd(sessionManager.get(session.id));
-        trace.close();
+    trace.sessionEnd(sessionManager.get(session.id));
+    trace.close();
 
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'exit', code: exitCode, sessionId: session.id }));
-            ws.close();
-        }
-    });
-
-    return { ptyProcess, session, trace, middlewareRunner: runner };
-}
-
-// ===== Helper Functions =====
-
-function buildHarnessArgs(tool, task) {
-    switch (tool) {
-        case 'gemini':
-            if (task === 'spawn_debug_test') {
-                return ['echo', 'Harness test output for:', task];
-            }
-            return [task, '--yolo'];
-        case 'opencode':
-            return ['run-task', task, '--yes'];
-        case 'codex':
-            return ['--harness', task, '--autonomous'];
-        case 'cursor':
-            return ['--task', task, '--auto-confirm'];
-        default:
-            return [task];
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'exit', code: exitCode, sessionId: session.id }));
     }
 }
 
-module.exports = { setupWebSocket, sessionManager, SessionManager };
+function buildProgressSummary({ exitCode, task, finishedSession }) {
+    const state = finishedSession?.state || (exitCode === 0 ? 'completed' : 'failed');
+    const suffix = exitCode === null ? 'terminated' : `exit code ${exitCode}`;
+    return `Session ${state} (${suffix}). Task: ${task}`;
+}
+
+module.exports = {
+    handleHarnessInit,
+    sessionManager,
+    setupWebSocket,
+};

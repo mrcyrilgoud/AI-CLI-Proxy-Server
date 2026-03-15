@@ -1,13 +1,18 @@
 const WebSocket = require('ws');
 const http = require('http');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const app = require('./server');
 
 describe('WebSocket Long Running Stop Test', () => {
   let server;
   let port;
+  let ws;
+  let contextDir;
 
   beforeAll((done) => {
-    // Use the HTTP server attached to the app (which has WSS bound)
+    contextDir = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-stop-'));
     server = app.server;
     if (server.address()) {
       port = server.address().port;
@@ -21,21 +26,36 @@ describe('WebSocket Long Running Stop Test', () => {
   });
 
   afterAll((done) => {
+    if (ws && ws.readyState < WebSocket.CLOSING) {
+      ws.close();
+    }
     server.close(done);
   });
 
   test('should start a session, send input, and then stop it', (done) => {
-    const ws = new WebSocket(`ws://localhost:${port}/api/harness/stream`);
+    ws = new WebSocket(`ws://localhost:${port}/api/harness/stream`);
+    let finished = false;
+
+    const finish = (error) => {
+      if (finished) {
+        return;
+      }
+
+      finished = true;
+      if (error) {
+        done(error);
+        return;
+      }
+
+      done();
+    };
 
     ws.on('open', () => {
-      // 1. Initialize a session — no pre-created sessionId needed;
-      //    the server.js WSS handler creates or looks up sessions.
-      //    But we need a real session. Let's init without sessionId
-      //    so harness-api creates one for us.
       ws.send(JSON.stringify({
         action: 'init',
         tool: 'gemini',
         task: 'spawn_debug_test',
+        contextDir,
       }));
     });
 
@@ -44,23 +64,13 @@ describe('WebSocket Long Running Stop Test', () => {
 
     ws.on('message', (message) => {
       const data = JSON.parse(message);
-      console.log('Received message:', data);
 
       if (data.type === 'session' && data.session) {
         sessionId = data.session.id;
       }
 
-      if (data.type === 'error') {
-        // If we get an error about missing session, that's expected since
-        // server.js WSS requires a pre-created sessionId. Just end gracefully.
-        ws.close();
-        done();
-        return;
-      }
-
       if (data.type === 'output') {
         outputCounter++;
-        // After receiving some output, send the stop signal
         if (outputCounter > 2 && sessionId) {
           ws.send(JSON.stringify({
             action: 'stop',
@@ -70,21 +80,23 @@ describe('WebSocket Long Running Stop Test', () => {
       }
 
       if (data.type === 'stopped') {
-        // Session was successfully stopped
         ws.close();
-        done();
+        finish();
       }
 
       if (data.type === 'exit') {
-        // Process exited naturally before we could stop it
         ws.close();
-        done();
+        finish();
+      }
+
+      if (data.type === 'error') {
+        ws.close();
+        finish(new Error(data.error));
       }
     });
 
     ws.on('error', (error) => {
-      console.error('WebSocket error:', error);
-      done(error);
+      finish(error);
     });
   }, 30000); // 30 second timeout for this test
 });

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync, execFileSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 /**
  * ProgressTracker — Multi-session persistence layer.
@@ -162,10 +162,11 @@ class ProgressTracker {
      */
     getGitSummary(count = 20) {
         try {
-            const log = execSync(`git log --oneline -${count}`, {
+            const log = execFileSync('git', ['log', '--oneline', `-${count}`], {
                 cwd: this.contextDir,
                 encoding: 'utf8',
                 timeout: 5000,
+                stdio: ['ignore', 'pipe', 'ignore'],
             }).trim();
 
             return log || 'No git history found.';

@@ -1,4 +1,12 @@
 node_modules/
 package-lock.json
+.harness/
+**/.harness/
+.playwright-cli/
+**/.playwright-cli/
+output/
+**/output/
+session.json
+echo_session.json
 server.log
 test_results.txt

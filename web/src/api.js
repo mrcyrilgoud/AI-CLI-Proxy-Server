@@ -33,7 +33,7 @@ export async function createSession({ tool, task, contextDir, mode, timeBudgetMs
 export async function fetchTools() {
     const res = await fetch(`${API_BASE}/tools`);
     if (!res.ok) throw new Error(`Failed to fetch tools: ${res.status}`);
-    return (await res.json()).tools;
+    return res.json();
 }
 
 /**

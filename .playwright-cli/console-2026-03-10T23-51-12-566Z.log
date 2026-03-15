@@ -1,5 +1,0 @@
-[   71609ms] [WARNING] WebSocket connection to 'ws://127.0.0.1:5174/api/harness/stream' failed: WebSocket is closed before the connection is established. @ http://127.0.0.1:5174/src/components/TerminalView.jsx:131
-[  151544ms] [WARNING] WebSocket connection to 'ws://127.0.0.1:5174/api/harness/stream' failed: WebSocket is closed before the connection is established. @ http://127.0.0.1:5174/src/components/TerminalView.jsx:131
-[  174285ms] [WARNING] WebSocket connection to 'ws://127.0.0.1:5174/api/harness/stream' failed: WebSocket is closed before the connection is established. @ http://127.0.0.1:5174/src/components/TerminalView.jsx:131
-[  209775ms] [WARNING] WebSocket connection to 'ws://127.0.0.1:5174/api/harness/stream' failed: WebSocket is closed before the connection is established. @ http://127.0.0.1:5174/src/components/TerminalView.jsx:131
-[  265728ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/api/harness/sessions?:0

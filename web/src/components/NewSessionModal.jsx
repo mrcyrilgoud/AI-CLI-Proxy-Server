@@ -15,9 +15,12 @@ export default function NewSessionModal({ onClose, onCreated }) {
 
     useEffect(() => {
         fetchTools()
-            .then(t => {
-                setTools(t);
-                if (t.length > 0) setForm(prev => ({ ...prev, tool: t[0] }));
+            .then(({ tools: nextTools = [], defaultTool = '' }) => {
+                setTools(nextTools);
+                const initialTool = nextTools.includes(defaultTool) ? defaultTool : nextTools[0] || '';
+                if (initialTool) {
+                    setForm(prev => ({ ...prev, tool: initialTool }));
+                }
             })
             .catch(err => setError(err.message));
     }, []);

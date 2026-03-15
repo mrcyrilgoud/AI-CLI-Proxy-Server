@@ -1,5 +1,0 @@
-{"timestamp":"2026-03-01T22:25:49.873Z","sessionId":"ac85337b-7fd4-45b6-b825-7bfcbe835500","seq":1,"event":"session_start","data":{"tool":"gemini","task":"op","mode":"coding","contextDir":"/Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server"}}
-{"timestamp":"2026-03-01T22:25:49.926Z","sessionId":"ac85337b-7fd4-45b6-b825-7bfcbe835500","seq":2,"event":"context_injected","data":{"lengthChars":1715,"preview":"=== HARNESS CONTEXT ===\nWorking Directory: /Users/mrcyrilgoud/Desktop/repos/AI-CLI-Proxy-Server\nProject Type: Node.js / JavaScript (detected from package.json)\n\nSession: ac85337b-7fd4-45b6-b825-7bfcbe"}}
-{"timestamp":"2026-03-01T22:25:49.926Z","sessionId":"ac85337b-7fd4-45b6-b825-7bfcbe835500","seq":3,"event":"middleware_triggered","data":{"middleware":"contextInjection","contextLength":1715}}
-{"timestamp":"2026-03-01T22:25:57.951Z","sessionId":"ac85337b-7fd4-45b6-b825-7bfcbe835500","seq":4,"event":"session_stopped","data":{"reason":"user_request"}}
-{"timestamp":"2026-03-01T22:25:57.958Z","sessionId":"ac85337b-7fd4-45b6-b825-7bfcbe835500","seq":5,"event":"session_end","data":{"state":"failed","summary":"Stopped by user","error":"Exited with code null"}}
