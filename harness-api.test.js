@@ -4,12 +4,12 @@ const os = require('os');
 const path = require('path');
 
 jest.mock('child_process', () => ({
+    execFile: jest.fn((command, args, options, callback) => callback(null, '/usr/bin/codex\n', '')),
     spawn: jest.fn(),
-    spawnSync: jest.fn(() => ({ status: 0 })),
 }));
 
-const { spawn, spawnSync } = require('child_process');
-const { handleHarnessInit } = require('./harness-api');
+const { execFile, spawn } = require('child_process');
+const { handleHarnessInit, resetToolResolutionCache } = require('./harness-api');
 
 function createChildProcessMock() {
     const child = new EventEmitter();
@@ -28,13 +28,17 @@ function createChildProcessMock() {
 
 describe('harness-api', () => {
     let tempDir;
+    let nowSpy;
 
     beforeEach(() => {
         jest.clearAllMocks();
+        resetToolResolutionCache();
+        nowSpy = jest.spyOn(Date, 'now').mockReturnValue(0);
         tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-api-test-'));
     });
 
     afterEach(() => {
+        nowSpy.mockRestore();
         fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
@@ -67,7 +71,7 @@ describe('harness-api', () => {
     it('falls back to npx when Codex is not installed', async () => {
         const child = createChildProcessMock();
         spawn.mockReturnValueOnce(child);
-        spawnSync.mockReturnValueOnce({ status: 1 });
+        execFile.mockImplementationOnce((command, args, options, callback) => callback(new Error('not found')));
 
         const ws = {
             readyState: 1,
@@ -86,5 +90,61 @@ describe('harness-api', () => {
             expect.any(Object)
         );
         expect(ws.send).toHaveBeenCalledWith(expect.stringContaining("Tool 'codex' not found globally"));
+    });
+
+    it('reuses cached tool resolution across harness sessions', async () => {
+        const firstChild = createChildProcessMock();
+        const secondChild = createChildProcessMock();
+        spawn
+            .mockReturnValueOnce(firstChild)
+            .mockReturnValueOnce(secondChild);
+
+        const ws = {
+            readyState: 1,
+            send: jest.fn(),
+        };
+
+        await handleHarnessInit(ws, {
+            tool: 'codex',
+            task: 'first task',
+            contextDir: tempDir,
+        });
+
+        await handleHarnessInit(ws, {
+            tool: 'codex',
+            task: 'second task',
+            contextDir: tempDir,
+        });
+
+        expect(execFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('revalidates cached tool resolution after the ttl expires', async () => {
+        const firstChild = createChildProcessMock();
+        const secondChild = createChildProcessMock();
+        spawn
+            .mockReturnValueOnce(firstChild)
+            .mockReturnValueOnce(secondChild);
+
+        const ws = {
+            readyState: 1,
+            send: jest.fn(),
+        };
+
+        await handleHarnessInit(ws, {
+            tool: 'codex',
+            task: 'first task',
+            contextDir: tempDir,
+        });
+
+        nowSpy.mockReturnValue(31000);
+
+        await handleHarnessInit(ws, {
+            tool: 'codex',
+            task: 'second task',
+            contextDir: tempDir,
+        });
+
+        expect(execFile).toHaveBeenCalledTimes(2);
     });
 });

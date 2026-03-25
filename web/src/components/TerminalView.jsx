@@ -8,11 +8,17 @@ import '@xterm/xterm/css/xterm.css';
  * XTerm terminal component that connects to the harness WebSocket.
  */
 const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEvent, onSessionUpdate }, ref) {
+    const MAX_BUFFERED_OUTPUT_CHARS = 64 * 1024;
+    const HIDDEN_TAB_FLUSH_DELAY_MS = 100;
     const termRef = useRef(null);
     const termInstance = useRef(null);
     const fitAddon = useRef(null);
     const wsRef = useRef(null);
     const codexInputNoticeShown = useRef(false);
+    const outputQueueRef = useRef([]);
+    const outputQueueSizeRef = useRef(0);
+    const flushFrameRef = useRef(null);
+    const flushTimerRef = useRef(null);
 
     // Stable refs for callbacks — avoids re-render reconnection loops
     const onMiddlewareEventRef = useRef(onMiddlewareEvent);
@@ -32,6 +38,57 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
     // Connect when session changes (stable dep: session.id only)
     useEffect(() => {
         if (!session) return;
+
+        let ws = null;
+        let fitTimer = null;
+        let connectTimer = null;
+        let handleResize = null;
+
+        const flushTerminalOutput = () => {
+            flushFrameRef.current = null;
+            flushTimerRef.current = null;
+            if (!termInstance.current || outputQueueRef.current.length === 0) {
+                return;
+            }
+
+            termInstance.current.write(outputQueueRef.current.join(''));
+            outputQueueRef.current = [];
+            outputQueueSizeRef.current = 0;
+        };
+
+        const flushPendingOutput = () => {
+            if (flushFrameRef.current !== null) {
+                window.cancelAnimationFrame(flushFrameRef.current);
+                flushFrameRef.current = null;
+            }
+            if (flushTimerRef.current !== null) {
+                window.clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
+
+            flushTerminalOutput();
+        };
+
+        const scheduleOutputWrite = (chunk) => {
+            outputQueueRef.current.push(chunk);
+            outputQueueSizeRef.current += chunk.length;
+
+            if (outputQueueSizeRef.current >= MAX_BUFFERED_OUTPUT_CHARS) {
+                flushPendingOutput();
+                return;
+            }
+
+            if (flushFrameRef.current !== null || flushTimerRef.current !== null) {
+                return;
+            }
+
+            if (document.hidden) {
+                flushTimerRef.current = window.setTimeout(flushTerminalOutput, HIDDEN_TAB_FLUSH_DELAY_MS);
+                return;
+            }
+
+            flushFrameRef.current = window.requestAnimationFrame(flushTerminalOutput);
+        };
 
         // Create terminal
         const term = new Terminal({
@@ -81,91 +138,102 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
         if (!isLiveSession) {
             term.writeln(`\x1b[90m[harness] Session is ${session.state}. Live stream is unavailable.\x1b[0m`);
 
-            const handleResize = () => {
+            handleResize = () => {
                 if (fitAddon.current) fitAddon.current.fit();
             };
             window.addEventListener('resize', handleResize);
-            const fitTimer = setTimeout(() => fit.fit(), 150);
+            fitTimer = window.setTimeout(() => fit.fit(), 150);
 
             return () => {
-                clearTimeout(fitTimer);
+                window.clearTimeout(fitTimer);
                 window.removeEventListener('resize', handleResize);
                 term.dispose();
             };
         }
 
-        // Connect WebSocket
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const ws = new WebSocket(`${protocol}//${host}/api/harness/stream`);
-        wsRef.current = ws;
+        // Defer connect so React Strict Mode's throwaway mount is cleaned up
+        // before any socket side effects are started.
+        connectTimer = window.setTimeout(() => {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            ws = new WebSocket(`${protocol}//${host}/api/harness/stream`);
+            wsRef.current = ws;
 
-        ws.onopen = () => {
-            term.writeln('\x1b[90m[harness] Connecting to session...\x1b[0m');
-            if (session.tool === 'codex') {
-                term.writeln('\x1b[90m[harness] Codex runs in non-interactive exec mode for this session.\x1b[0m');
-            }
-            ws.send(JSON.stringify({
-                action: 'init',
-                tool: session.tool,
-                task: session.task,
-                contextDir: session.contextDir,
-                sessionId: session.id,
-                mode: session.mode,
-                timeBudgetMs: session.timeBudgetMs,
-            }));
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const msg = JSON.parse(event.data);
-
-                switch (msg.type) {
-                    case 'output':
-                        term.write(msg.data);
-                        break;
-                    case 'session':
-                        term.writeln(`\x1b[90m[harness] Session ${msg.session.id} (${msg.session.mode} mode)\x1b[0m`);
-                        term.writeln(`\x1b[90m[harness] Middleware: ${msg.session.middleware.join(', ')}\x1b[0m`);
-                        term.writeln('');
-                        onSessionUpdateRef.current?.(msg.session);
-                        break;
-                    case 'exit':
-                        term.writeln('');
-                        term.writeln(`\x1b[90m[harness] Session ended (exit code: ${msg.code})\x1b[0m`);
-                        onSessionUpdateRef.current?.({ state: (msg.code === 0 || msg.code === null) ? 'completed' : 'failed' });
-                        break;
-                    case 'error':
-                        term.writeln(`\x1b[31m[harness] Error: ${msg.error}\x1b[0m`);
-                        if (typeof msg.error === 'string' && msg.error.startsWith('Session is in state:')) {
-                            const state = msg.error.split(':').pop()?.trim();
-                            if (state) {
-                                onSessionUpdateRef.current?.({ state });
-                                break;
-                            }
-                        }
-                        onSessionUpdateRef.current?.({ state: 'failed' });
-                        break;
-                    case 'input_disabled':
-                        term.writeln('\x1b[90m[harness] Input disabled for this session.\x1b[0m');
-                        break;
-                    default:
-                        if (msg.middleware) {
-                            onMiddlewareEventRef.current?.(msg);
-                        }
+            ws.onopen = () => {
+                term.writeln('\x1b[90m[harness] Connecting to session...\x1b[0m');
+                if (session.tool === 'codex') {
+                    term.writeln('\x1b[90m[harness] Codex runs in non-interactive exec mode for this session.\x1b[0m');
                 }
-            } catch {
-                term.write(event.data);
-            }
-        };
+                ws.send(JSON.stringify({
+                    action: 'init',
+                    tool: session.tool,
+                    task: session.task,
+                    contextDir: session.contextDir,
+                    sessionId: session.id,
+                    mode: session.mode,
+                    timeBudgetMs: session.timeBudgetMs,
+                }));
+            };
 
-        ws.onclose = () => {
-            term.writeln('\x1b[90m[harness] Connection closed\x1b[0m');
-        };
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
 
-        ws.onerror = () => {
-            term.writeln('\x1b[31m[harness] WebSocket error\x1b[0m');
-        };
+                    switch (msg.type) {
+                        case 'output':
+                            scheduleOutputWrite(msg.data);
+                            break;
+                        case 'session':
+                            flushPendingOutput();
+                            term.writeln(`\x1b[90m[harness] Session ${msg.session.id} (${msg.session.mode} mode)\x1b[0m`);
+                            term.writeln(`\x1b[90m[harness] Middleware: ${msg.session.middleware.join(', ')}\x1b[0m`);
+                            term.writeln('');
+                            onSessionUpdateRef.current?.(msg.session);
+                            break;
+                        case 'exit':
+                            flushPendingOutput();
+                            term.writeln('');
+                            term.writeln(`\x1b[90m[harness] Session ended (exit code: ${msg.code})\x1b[0m`);
+                            onSessionUpdateRef.current?.({ state: (msg.code === 0 || msg.code === null) ? 'completed' : 'failed' });
+                            break;
+                        case 'error':
+                            flushPendingOutput();
+                            term.writeln(`\x1b[31m[harness] Error: ${msg.error}\x1b[0m`);
+                            if (typeof msg.error === 'string' && msg.error.startsWith('Session is in state:')) {
+                                const state = msg.error.split(':').pop()?.trim();
+                                if (state) {
+                                    onSessionUpdateRef.current?.({ state });
+                                    break;
+                                }
+                            }
+                            onSessionUpdateRef.current?.({ state: 'failed' });
+                            break;
+                        case 'input_disabled':
+                            flushPendingOutput();
+                            term.writeln('\x1b[90m[harness] Input disabled for this session.\x1b[0m');
+                            break;
+                        default:
+                            flushPendingOutput();
+                            if (msg.middleware) {
+                                onMiddlewareEventRef.current?.(msg);
+                            }
+                    }
+                } catch {
+                    flushPendingOutput();
+                    term.write(event.data);
+                }
+            };
+
+            ws.onclose = () => {
+                flushPendingOutput();
+                term.writeln('\x1b[90m[harness] Connection closed\x1b[0m');
+            };
+
+            ws.onerror = () => {
+                flushPendingOutput();
+                term.writeln('\x1b[31m[harness] WebSocket error\x1b[0m');
+            };
+        }, 0);
 
         // Forward terminal input to WebSocket
         term.onData((data) => {
@@ -176,7 +244,7 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
                 }
                 return;
             }
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     action: 'input',
                     sessionId: session.id,
@@ -186,18 +254,20 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
         });
 
         // Handle window resize
-        const handleResize = () => {
+        handleResize = () => {
             if (fitAddon.current) fitAddon.current.fit();
         };
         window.addEventListener('resize', handleResize);
 
         // Delayed fit to account for layout settling
-        const fitTimer = setTimeout(() => fit.fit(), 150);
+        fitTimer = window.setTimeout(() => fit.fit(), 150);
 
         return () => {
-            clearTimeout(fitTimer);
+            window.clearTimeout(connectTimer);
+            window.clearTimeout(fitTimer);
             window.removeEventListener('resize', handleResize);
-            if (ws.readyState === WebSocket.OPEN) {
+            flushPendingOutput();
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.close();
             }
             term.dispose();
