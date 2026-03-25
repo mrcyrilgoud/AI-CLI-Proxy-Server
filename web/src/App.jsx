@@ -53,7 +53,7 @@ export default function App() {
 
   // Handle middleware events from terminal — stable ref to avoid re-render loops
   const handleMiddlewareEvent = useCallback((event) => {
-    setMiddlewareEvents(prev => [...prev, event]);
+    setMiddlewareEvents(prev => [...prev.slice(-199), event]);
   }, []);
 
   // Handle session status updates from WebSocket — stable ref

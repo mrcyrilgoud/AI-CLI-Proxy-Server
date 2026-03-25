@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const { spawn, spawnSync } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { SessionManager, ProgressTracker, TraceLogger, MiddlewareRunner } = require('./harness');
 const createContextInjectionMiddleware = require('./harness/middleware/contextInjection');
 const createLoopDetectionMiddleware = require('./harness/middleware/loopDetection');
@@ -8,6 +8,7 @@ const createTimeBudgetMiddleware = require('./harness/middleware/timeBudget');
 const { buildHarnessArgs, getUnsupportedToolMessage, isSupportedTool } = require('./cli-tools');
 
 const sessionManager = new SessionManager();
+const toolResolutionCache = new Map();
 
 const DEBUG_TASK = 'spawn_debug_test';
 const DEBUG_SCRIPT = `
@@ -182,7 +183,7 @@ async function handleHarnessInit(ws, payload) {
     trace.sessionStart(session);
 
     const runner = createMiddlewareRunner(session);
-    const ptyProcess = spawnHarnessProcess({ tool, task, cwd: safeContextDir, ws, sessionId: session.id });
+    const ptyProcess = await spawnHarnessProcess({ tool, task, cwd: safeContextDir, ws, sessionId: session.id });
     const contextResult = await runner.run('session:start', {
         data: null,
         session,
@@ -250,7 +251,7 @@ function createMiddlewareRunner(session) {
     return runner;
 }
 
-function spawnHarnessProcess({ tool, task, cwd, ws, sessionId }) {
+async function spawnHarnessProcess({ tool, task, cwd, ws, sessionId }) {
     if (task === DEBUG_TASK) {
         return createProcessAdapter(spawn(process.execPath, ['-e', DEBUG_SCRIPT, task], {
             cwd,
@@ -260,11 +261,10 @@ function spawnHarnessProcess({ tool, task, cwd, ws, sessionId }) {
     }
 
     const args = buildHarnessArgs(tool, task);
-    const hasTool = spawnSync('which', [tool], { stdio: 'ignore' }).status === 0;
-    const command = hasTool ? tool : 'npx';
-    const commandArgs = hasTool ? args : ['--yes', tool, ...args];
+    const { command, prefixArgs, usedFallback } = await resolveHarnessCommand(tool);
+    const commandArgs = [...prefixArgs, ...args];
 
-    if (!hasTool && ws.readyState === WebSocket.OPEN) {
+    if (usedFallback && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
             type: 'output',
             data: `\x1b[90m[harness] Tool '${tool}' not found globally. Trying via npx...\x1b[0m\r\n`,
@@ -280,6 +280,47 @@ function spawnHarnessProcess({ tool, task, cwd, ws, sessionId }) {
         env: { ...process.env, FORCE_COLOR: '1' },
         stdio: ['pipe', 'pipe', 'pipe'],
     }));
+}
+
+async function resolveHarnessCommand(tool) {
+    const cached = toolResolutionCache.get(tool);
+    if (cached) {
+        return cached;
+    }
+
+    const lookupCommand = process.platform === 'win32' ? 'where' : 'which';
+    const lookupPromise = new Promise((resolve) => {
+        execFile(
+            lookupCommand,
+            [tool],
+            {
+                windowsHide: true,
+            },
+            (error) => {
+                if (error) {
+                    resolve({
+                        command: 'npx',
+                        prefixArgs: ['--yes', tool],
+                        usedFallback: true,
+                    });
+                    return;
+                }
+
+                resolve({
+                    command: tool,
+                    prefixArgs: [],
+                    usedFallback: false,
+                });
+            }
+        );
+    });
+
+    toolResolutionCache.set(tool, lookupPromise);
+    return lookupPromise;
+}
+
+function resetToolResolutionCache() {
+    toolResolutionCache.clear();
 }
 
 function createProcessAdapter(childProcess) {
@@ -381,6 +422,7 @@ function buildProgressSummary({ exitCode, task, finishedSession }) {
 
 module.exports = {
     handleHarnessInit,
+    resetToolResolutionCache,
     sessionManager,
     setupWebSocket,
 };
