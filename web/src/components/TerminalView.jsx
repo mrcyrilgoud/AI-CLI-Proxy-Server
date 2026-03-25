@@ -8,13 +8,17 @@ import '@xterm/xterm/css/xterm.css';
  * XTerm terminal component that connects to the harness WebSocket.
  */
 const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEvent, onSessionUpdate }, ref) {
+    const MAX_BUFFERED_OUTPUT_CHARS = 64 * 1024;
+    const HIDDEN_TAB_FLUSH_DELAY_MS = 100;
     const termRef = useRef(null);
     const termInstance = useRef(null);
     const fitAddon = useRef(null);
     const wsRef = useRef(null);
     const codexInputNoticeShown = useRef(false);
     const outputQueueRef = useRef([]);
+    const outputQueueSizeRef = useRef(0);
     const flushFrameRef = useRef(null);
+    const flushTimerRef = useRef(null);
 
     // Stable refs for callbacks — avoids re-render reconnection loops
     const onMiddlewareEventRef = useRef(onMiddlewareEvent);
@@ -42,12 +46,14 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
 
         const flushTerminalOutput = () => {
             flushFrameRef.current = null;
+            flushTimerRef.current = null;
             if (!termInstance.current || outputQueueRef.current.length === 0) {
                 return;
             }
 
             termInstance.current.write(outputQueueRef.current.join(''));
             outputQueueRef.current = [];
+            outputQueueSizeRef.current = 0;
         };
 
         const flushPendingOutput = () => {
@@ -55,13 +61,29 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
                 window.cancelAnimationFrame(flushFrameRef.current);
                 flushFrameRef.current = null;
             }
+            if (flushTimerRef.current !== null) {
+                window.clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
 
             flushTerminalOutput();
         };
 
         const scheduleOutputWrite = (chunk) => {
             outputQueueRef.current.push(chunk);
-            if (flushFrameRef.current !== null) {
+            outputQueueSizeRef.current += chunk.length;
+
+            if (outputQueueSizeRef.current >= MAX_BUFFERED_OUTPUT_CHARS) {
+                flushPendingOutput();
+                return;
+            }
+
+            if (flushFrameRef.current !== null || flushTimerRef.current !== null) {
+                return;
+            }
+
+            if (document.hidden) {
+                flushTimerRef.current = window.setTimeout(flushTerminalOutput, HIDDEN_TAB_FLUSH_DELAY_MS);
                 return;
             }
 

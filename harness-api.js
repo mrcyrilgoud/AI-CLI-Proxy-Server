@@ -8,6 +8,7 @@ const createTimeBudgetMiddleware = require('./harness/middleware/timeBudget');
 const { buildHarnessArgs, getUnsupportedToolMessage, isSupportedTool } = require('./cli-tools');
 
 const sessionManager = new SessionManager();
+const TOOL_RESOLUTION_TTL_MS = 30000;
 const toolResolutionCache = new Map();
 
 const DEBUG_TASK = 'spawn_debug_test';
@@ -284,8 +285,8 @@ async function spawnHarnessProcess({ tool, task, cwd, ws, sessionId }) {
 
 async function resolveHarnessCommand(tool) {
     const cached = toolResolutionCache.get(tool);
-    if (cached) {
-        return cached;
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.promise;
     }
 
     const lookupCommand = process.platform === 'win32' ? 'where' : 'which';
@@ -315,7 +316,10 @@ async function resolveHarnessCommand(tool) {
         );
     });
 
-    toolResolutionCache.set(tool, lookupPromise);
+    toolResolutionCache.set(tool, {
+        promise: lookupPromise,
+        expiresAt: Date.now() + TOOL_RESOLUTION_TTL_MS,
+    });
     return lookupPromise;
 }
 
