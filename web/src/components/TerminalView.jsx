@@ -222,7 +222,7 @@ const TerminalView = forwardRef(function TerminalView({ session, onMiddlewareEve
                 }
                 return;
             }
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     action: 'input',
                     sessionId: session.id,
