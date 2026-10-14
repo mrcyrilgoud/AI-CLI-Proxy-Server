@@ -1,0 +1,40 @@
+{
+  "codex": [
+    {"type":"thread.started","thread_id":"private-session"},
+    {"type":"item.completed","item":{"id":"reasoning","type":"reasoning","text":"not public"}},
+    {"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"Hello 🌍"}},
+    {"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"Hello 🌍"}}
+  ],
+  "gemini": [
+    {"type":"init","session_id":"private-session"},
+    {"type":"message","role":"user","content":"private prompt"},
+    {"type":"message","role":"assistant","content":"Hello ","delta":true},
+    {"type":"message","role":"assistant","content":"🌍","delta":true},
+    {"type":"result","status":"success"}
+  ],
+  "opencode": [
+    {"type":"tool_use","part":{"text":"not public"}},
+    {"type":"text","part":{"id":"answer","text":"Hello "}},
+    {"type":"text","part":{"id":"answer","text":"Hello 🌍"}}
+  ],
+  "cursor": [
+    {"type":"system","apiKeySource":"private"},
+    {"type":"assistant","timestamp_ms":1,"message":{"content":[{"type":"text","text":"Hello "}]}},
+    {"type":"assistant","timestamp_ms":2,"message":{"content":[{"type":"text","text":"🌍"}]}},
+    {"type":"assistant","timestamp_ms":3,"model_call_id":"call-1","message":{"content":[{"type":"text","text":"Hello 🌍"}]}},
+    {"type":"assistant","message":{"content":[{"type":"text","text":"Hello 🌍"}]}},
+    {"type":"result","result":"Hello 🌍"}
+  ],
+  "claude": [
+    {"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"not public"}}},
+    {"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello "}}},
+    {"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"🌍"}}},
+    {"type":"assistant","message":{"content":[{"type":"text","text":"Hello 🌍"}]}},
+    {"type":"result","result":"Hello 🌍"}
+  ],
+  "kiro": [
+    {"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"not public"}},
+    {"params":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello "}}}},
+    {"params":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"🌍"}}}}
+  ]
+}

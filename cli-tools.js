@@ -1,10 +1,12 @@
 const DEFAULT_TOOL = 'codex';
+const { registry } = require('./inference-tools');
+// Coding harness support and argument behavior remain separate from inference adapters.
 const SUPPORTED_TOOLS = [DEFAULT_TOOL, 'gemini', 'opencode', 'cursor'];
 
 function getToolsResponse() {
     return {
         defaultTool: DEFAULT_TOOL,
-        tools: [...SUPPORTED_TOOLS],
+        tools: Object.keys(registry),
     };
 }
 
@@ -17,24 +19,9 @@ function getUnsupportedToolMessage() {
 }
 
 function buildLowLevelArgs(tool, prompt, files = []) {
-    switch (tool) {
-        case 'gemini':
-            return ['prompt', prompt].concat(files.length > 0 ? ['--files', ...files] : []);
-        case 'opencode':
-            return ['ask', prompt].concat(files.map((file) => `--context=${file}`));
-        case 'codex':
-            return [
-                'exec',
-                buildPromptWithFiles(prompt, files),
-                '--dangerously-bypass-approvals-and-sandbox',
-                '--skip-git-repo-check',
-                '--json',
-            ];
-        case 'cursor':
-            return ['--query', prompt, ...files.map((file) => `--file=${file}`)];
-        default:
-            return [prompt, ...files];
-    }
+    if (!registry[tool]) throw new Error('Unsupported CLI tool');
+    if (files.length) throw new Error('File input is unsupported for isolated inference');
+    return registry[tool].buildArgs(prompt);
 }
 
 function buildHarnessArgs(tool, task) {
@@ -113,6 +100,7 @@ function buildPromptWithFiles(prompt, files) {
 }
 
 module.exports = {
+    registry,
     DEFAULT_TOOL,
     SUPPORTED_TOOLS,
     buildHarnessArgs,

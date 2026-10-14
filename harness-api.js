@@ -40,7 +40,11 @@ process.on('SIGTERM', () => {
 `;
 
 function setupWebSocket(httpServer) {
-    const wss = new WebSocket.Server({ server: httpServer, path: '/api/harness/stream' });
+    const { isLoopbackOrigin } = require('./local-access');
+    const wss = new WebSocket.Server({
+        server: httpServer, path: '/api/harness/stream',
+        verifyClient: ({ origin, req }) => isLoopbackOrigin(origin) && isLoopbackOrigin(`http://${req.headers.host}`),
+    });
 
     wss.on('connection', (ws) => {
         if (process.env.NODE_ENV !== 'test') {
